@@ -25,7 +25,7 @@
 #' Allocation effect
 #' \deqn{A_{i}=(w_{pi}-w_{bi})\times R_{bi}}{Ai = (wpi - wbi) * Rbi}
 #' Selection effect
-#' \deqn{S_{i}=w_{pi}\times(R_{pi}-R_{bi})}{Si = wpi * (Rpi - Rbi)}
+#' \deqn{S_{i}=w_{bi}\times(R_{pi}-R_{bi})}{Si = wbi * (Rpi - Rbi)}
 #' Interaction effect
 #' \deqn{I_{i}=(w_{pi}-w_{bi})
 #' \times(R_{pi}-R_{bi})}{Ii = (wpi - wbi) * Rpi - Rbi}
@@ -112,7 +112,7 @@
 #' currency forward contracts
 #' @param S (T+1) x n xts, data frame or matrix with spot rates. The first date
 #' should coincide with the first date of portfolio returns
-#' @param F (T+1) x n xts, data frame or matrix with forward rates. The first
+#' @param Forward_Rate (T+1) x n xts, data frame or matrix with forward rates. The first
 #' date should coincide with the first date of portfolio returns
 #' @param Rpl xts, data frame or matrix of portfolio returns in local currency
 #' @param Rbl xts, data frame or matrix of benchmark returns in local currency
@@ -163,7 +163,7 @@
 #' @export
 Attribution <- 
 function (Rp, wp, Rb, wb, 
-          wpf = NA, wbf = NA, S = NA, F = NA, Rpl = NA, Rbl = NA, Rbh = NA,
+          wpf = NA, wbf = NA, S = NA, Forward_Rates = NA, Rpl = NA, Rbl = NA, Rbh = NA,
           bf = FALSE,
           method = c("none", "top.down", "bottom.up"), 
           linking = c("carino", 
@@ -210,7 +210,7 @@ function (Rp, wp, Rb, wb,
       Rb = Rb[2:nrow(Rb)]
     }
     if (ncol(Rb) == 1){
-      Rb = matrix(rep(coredata(Rb), ncol(Rp)), nrow(Rp), ncol(Rp))
+      Rb = xts(matrix(rep(coredata(Rb), ncol(Rp)), nrow(Rp), ncol(Rp)),order.by=index(Rb))
     }
     if (ncol(Rb) != ncol(Rp)){
       stop("Please use benchmark xts that has columns with benchmarks for each
@@ -220,7 +220,7 @@ function (Rp, wp, Rb, wb,
     linking = linking[1]
     
     currency = !(is.null(dim(wpf)) & is.null(dim(wbf)) & 
-                   is.null(dim(S)) & is.null(dim(F)) & 
+                   is.null(dim(S)) & is.null(dim(Forward_Rates)) & 
                    is.null(dim(Rpl)) & is.null(dim(Rpl)) & 
                    is.null(dim(Rpl)))
     
@@ -235,12 +235,12 @@ function (Rp, wp, Rb, wb,
         L = 0
       } else{         # If multi-currency portfolio
         S = checkData(S)
-        F = checkData(F)
+        Forward_Rates = checkData(Forward_Rates)
         wpf = Weight.transform(wpf, Rp)
         wbf = Weight.transform(wbf, Rb)
         
         Rc = lag(S, -1)[1:nrow(Rp), ] / S[1:nrow(Rp), ] - 1
-        Rd = lag(F, -1)[1:nrow(Rp), ] / S[1:nrow(Rp), ] - 1
+        Rd = lag(Forward_Rates, -1)[1:nrow(Rp), ] / S[1:nrow(Rp), ] - 1
         Re = Rc - coredata(Rd)
         Rl = Rb - coredata(Rc)
         Rk = Rp - coredata(Rc)
@@ -273,15 +273,28 @@ function (Rp, wp, Rb, wb,
       names(rb) = "Total"
       
       # Get individual attribution effects
+      #if the benchmark weights are not specified allocation effect is equal to 0
+      #selection contribution is equal to 0
+      #if bm weights unknown all contribution is treated as interaction as it cannot be broken down, user is warned
+      
+      if(ncol(wb)==1){#allocation = 0 * (Rb - coredata(Rc) - coredata(L))
+                      selection = (Rp  - coredata(Rb))*0
+                      allocation = (Rp  - coredata(Rb))*0
+                      interaction = (wp ) * (Rp - coredata(Rb))  
+                      warning("Benchmark weights unknown, all effects treated as interaction, returns wp*(Rp-Rb)")                      }else{
       if (bf == TRUE){ # Brinson and Fachler (1985) allocation effect
         allocation = coredata(wp - wb) * (Rb - coredata(Rc) - coredata(L) - 
           rep(rb, ncol(Rb)))
       } else{          # Brinson, Hood and Beebower (1986) allocation effect
-        allocation = coredata(wp - wb) * (Rb - coredata(Rc) - coredata(L))
+                    allocation = coredata(wp - wb) * (Rb - coredata(Rc) - coredata(L))
       }
-
+                      
       selection = (Rp  - coredata(Rb)) * wb
-      interaction = (wp - wb) * (Rp - coredata(Rb))
+      interaction = (wp - wb) * (Rp - coredata(Rb))         
+                      
+                      }
+    
+      
       
       # Get total attribution effects 
       n = ncol(allocation)               # number of segments
@@ -341,7 +354,7 @@ function (Rp, wp, Rb, wb,
       if (method == "none"){
         result[[4]] = interaction
       }
-    } else{ # The function takes output of the corresponding function 
+   } else{ # The function takes output of the corresponding function 
             # (Attribution.geometric or DaviesLaker)
       if (geometric == TRUE){
         attrib = Attribution.geometric(Rp, WP, Rb, WB)
